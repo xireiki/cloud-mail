@@ -5,8 +5,12 @@ import verifyRecordService from './service/verify-record-service';
 import emailService from './service/email-service';
 import kvObjService from './service/kv-obj-service';
 import oauthService from "./service/oauth-service";
-export default {
-	 async fetch(req, env, ctx) {
+import { WorkerEntrypoint } from "cloudflare:workers";
+
+export default class extends WorkerEntrypoint {
+	async fetch(req) {
+		const env = this.env;
+		const ctx = this.ctx;
 
 		const url = new URL(req.url)
 
@@ -21,12 +25,17 @@ export default {
 		 }
 
 		return env.assets.fetch(req);
-	},
-	email: email,
+	}
+	async email(message) {
+		const env = this.env;
+		const ctx = this.ctx;
+
+		return email(message, env, ctx);
+	}
 	async scheduled(c, env, ctx) {
 		await verifyRecordService.clearRecord({ env })
 		await userService.resetDaySendCount({ env })
 		await emailService.completeReceiveAll({ env })
 		await oauthService.clearNoBindOathUser({ env })
-	},
+	}
 };
