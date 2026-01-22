@@ -507,14 +507,19 @@ function formatImage(content) {
 }
 
 function open() {
-  if (!accountStore.currentAccount.email) {
+  let account = accountStore.currentAccount;
+  if (accountStore.currentAccountId === 0) {
+    account = userStore.user.account;
+  }
+  
+  if (!account.email) {
     form.sendEmail = userStore.user.email;
     form.accountId = userStore.user.account.accountId;
     form.name = userStore.user.name;
   } else {
-    form.sendEmail = accountStore.currentAccount.email;
-    form.accountId = accountStore.currentAccount.accountId;
-    form.name = accountStore.currentAccount.name;
+    form.sendEmail = account.email;
+    form.accountId = account.accountId;
+    form.name = account.name;
   }
   show.value = true;
   editor.value.focus()
@@ -661,9 +666,6 @@ function close() {
         grid-template-columns: auto auto auto 1fr;
       }
 
-      .title-text {
-      }
-
       .sender {
         margin-left: 8px;
       }
@@ -695,6 +697,21 @@ function close() {
       gap: 15px;
 
       .item-title {
+      }
+      
+      .distribute {
+        color: var(--el-color-info);
+        background: var(--el-color-info-light-9);
+        border: var(--el-color-info-light-8);
+        border-radius: 4px;
+        font-size: 12px;
+        padding: 0 5px;
+      }
+
+      .distribute.checked {
+        background: var(--el-color-primary-light-9);
+        color: var(--el-color-primary) !important;
+        border-radius: 4px;
       }
 
       .button-item {

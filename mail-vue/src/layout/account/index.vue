@@ -6,6 +6,17 @@
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
+        <el-card class="item" :class="itemBg(0)" v-if="accounts.length >= 2" @click="changeAccount(allMailAccount)">
+          <div class="account">
+            {{ $t('allMail') }}
+          </div>
+          <div class="opt">
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <Icon icon="eva:email-fill" width="22" height="22" color="#409EFF" />
+              <span style="font-size: 14px; color: #409EFF; font-weight: bold;">{{ allMailCount }}</span>
+            </div>
+          </div>
+        </el-card>
         <el-card class="item" :class="itemBg(item.accountId)" v-for="(item, index) in accounts" :key="item.accountId"
                  @click="changeAccount(item)">
           <div class="account">
@@ -136,6 +147,7 @@ import {
   accountSetAllReceive,
   accountSetAsTop
 } from "@/request/account.js";
+import {emailList} from "@/request/email.js";
 import {sleep} from "@/utils/time-utils.js"
 import {isEmail} from "@/utils/verify-utils.js";
 import {useSettingStore} from "@/store/setting.js";
@@ -155,6 +167,13 @@ const showAdd = ref(false)
 const addLoading = ref(false);
 const domainList = settingStore.domainList
 const accounts = reactive([])
+const allMailAccount = reactive({
+  accountId: 0,
+  email: t('allMail'),
+  allReceive: 1,
+  name: t('allMail')
+})
+const allMailCount = ref(0)
 const noLoading = ref(false)
 const loading = ref(false)
 const followLoading = ref(false);
@@ -337,6 +356,15 @@ function changeAccount(account) {
   accountStore.currentAccount = account
 }
 
+async function loadAllMailCount() {
+  try {
+    const data = await emailList(0, 1, 0, 0, 1, 0)
+    allMailCount.value = data.total || 0
+  } catch (e) {
+    console.error('获取全部邮件数量失败:', e)
+  }
+}
+
 function add() {
   showAdd.value = true
   setTimeout(() => {
@@ -404,6 +432,7 @@ function getAccountList() {
     }
     if (accounts.length === 0) {
       accountStore.currentAccount = list[0]
+      loadAllMailCount()
     }
 
     accounts.push(...list)
