@@ -353,7 +353,17 @@ function refresh() {
 
 function changeAccount(account) {
   accountStore.currentAccountId = account.accountId
-  accountStore.currentAccount = account
+  if (account.accountId === 0) {
+    // 使用store中的默认全部邮件虚拟账户
+    accountStore.currentAccount = {
+      accountId: 0,
+      email: '全部邮件',
+      allReceive: 1,
+      name: '全部邮件'
+    }
+  } else {
+    accountStore.currentAccount = account
+  }
 }
 
 async function loadAllMailCount() {
@@ -434,8 +444,9 @@ function getAccountList() {
       // 如果有多个账户，默认选择"全部邮件"
       if (list.length >= 2) {
         accountStore.currentAccountId = 0
-        accountStore.currentAccount = allMailAccount
+        // 保持store中的默认全部邮件虚拟账户
       } else {
+        accountStore.currentAccountId = list[0].accountId
         accountStore.currentAccount = list[0]
       }
       loadAllMailCount()

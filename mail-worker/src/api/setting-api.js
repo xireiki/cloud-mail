@@ -8,7 +8,8 @@ app.put('/setting/set', async (c) => {
 });
 
 app.get('/setting/query', async (c) => {
-	const setting = await settingService.get(c);
+	const showSiteKey = c.req.query('showSiteKey') === 'true';
+	const setting = await settingService.get(c, showSiteKey);
 	return c.json(result.ok(setting));
 });
 

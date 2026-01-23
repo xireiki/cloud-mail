@@ -28,5 +28,6 @@ mail-vue/dist
 
 wrangler.toml
 wrangler.json
+wrangler-*.toml
 .vars
 .dev.vars

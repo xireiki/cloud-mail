@@ -18,7 +18,8 @@ const exclude = [
 	'/public/genToken',
 	'/telegram',
 	'/test',
-	'/oauth'
+	'/oauth',
+	'/federation/receive'
 ];
 
 const requirePerms = [
@@ -56,7 +57,9 @@ const requirePerms = [
 	'/regKey/list',
 	'/regKey/delete',
 	'/regKey/clearNotUse',
-	'/regKey/history'
+	'/regKey/history',
+	'/federation-site/generate-key',
+	'/federation-site/validate-key'
 ];
 
 const premKey = {
@@ -85,6 +88,10 @@ const premKey = {
 	'reg-key:add': ['/regKey/add'],
 	'reg-key:query': ['/regKey/list','/regKey/history'],
 	'reg-key:delete': ['/regKey/delete','/regKey/clearNotUse'],
+	'federation-site:add': ['/federation-site/add'],
+	'federation-site:query': ['/federation-site/list', '/federation-site/get'],
+	'federation-site:update': ['/federation-site/update'],
+	'federation-site:delete': ['/federation-site/delete'],
 };
 
 app.use('*', async (c, next) => {

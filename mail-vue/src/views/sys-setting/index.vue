@@ -352,6 +352,14 @@
             </div>
           </div>
 
+          <!-- Federation Site Management Card -->
+          <div class="settings-card federation-management-card">
+            <div class="card-title">{{ $t('federationSiteManagement') }}</div>
+            <div class="card-content">
+              <FederationSiteManagement />
+            </div>
+          </div>
+
           <div class="settings-card about">
             <div class="card-title">{{ $t('about') }}</div>
             <div class="card-content">
@@ -748,6 +756,7 @@ import loading from "@/components/loading/index.vue";
 import {getTextWidth} from "@/utils/text.js";
 import {fileToBase64} from "@/utils/file-utils.js"
 import {useI18n} from 'vue-i18n';
+import FederationSiteManagement from './federation-site.vue';
 import axios from "axios";
 
 defineOptions({
@@ -767,6 +776,7 @@ const editTitleShow = ref(false)
 const resendTokenFormShow = ref(false)
 const r2DomainShow = ref(false)
 const turnstileShow = ref(false)
+const federationKeyShow = ref(false)
 const tgSettingShow = ref(false)
 const noticePopupShow = ref(false)
 const thirdEmailShow = ref(false)
@@ -799,6 +809,10 @@ const resendTokenForm = reactive({
 const turnstileForm = reactive({
   siteKey: '',
   secretKey: ''
+})
+
+const federationKeyForm = reactive({
+  symmetricKey: ''
 })
 
 const s3 = reactive({
@@ -983,6 +997,11 @@ function openTgSetting() {
 
 function openNoticePopupSetting() {
   noticePopupShow.value = true
+}
+
+function openFederationKeyDialog() {
+  federationKeyForm.symmetricKey = setting.value.federationSymmetricKey || ''
+  federationKeyShow.value = true
 }
 
 function openResendList() {
@@ -1420,7 +1439,20 @@ function editSetting(settingForm, refreshStatus = true) {
   border-radius: 8px;
   border: 1px solid var(--el-border-color);
   transition: all 300ms;
-  overflow: hidden;
+  overflow: visible;
+}
+
+/* 联邦管理卡片需要更多空间 */
+.federation-management-card {
+  min-width: 0; /* 允许收缩 */
+  overflow: visible; /* 确保内容不会溢出 */
+}
+
+/* 在窄屏幕上为联邦管理卡片提供更多空间 */
+@media (max-width: 768px) {
+  .federation-management-card {
+    grid-column: 1 / -1; /* 在窄屏幕上独占一行 */
+  }
 }
 
 

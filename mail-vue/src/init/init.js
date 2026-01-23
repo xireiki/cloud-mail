@@ -38,8 +38,14 @@ export async function init() {
         document.title = setting.title;
 
         if (user) {
-            accountStore.currentAccountId = user.account.accountId;
-            accountStore.currentAccount = user.account;
+            // 保持默认值0，表示"全部邮件"虚拟账户
+            // accountStore.currentAccountId 默认就是0
+            // accountStore.currentAccount 默认是空对象，但邮件列表组件需要allReceive属性
+            // 所以我们需要设置一个默认的currentAccount对象
+            accountStore.currentAccount = {
+                accountId: 0,
+                allReceive: 1
+            };
             userStore.user = user;
 
             const routers = permsToRouter(user.permKeys);

@@ -21,6 +21,8 @@ import domainUtils from '../utils/domain-uitls';
 import account from "../entity/account";
 import { att } from '../entity/att';
 import telegramService from './telegram-service';
+import {sleep} from "../utils/time-utils";
+import cryptoUtils from '../utils/crypto-utils';
 
 const emailService = {
 
@@ -49,8 +51,13 @@ const emailService = {
 		}
 
 		if (isNaN(allReceive)) {
-			let accountRow = await accountService.selectById(c, accountId);
-			allReceive = accountRow.allReceive;
+			if (accountId === 0) {
+				// 全部邮件虚拟账户
+				allReceive = 1;
+			} else {
+				let accountRow = await accountService.selectById(c, accountId);
+				allReceive = accountRow.allReceive;
+			}
 		}
 
 		const query = orm(c)
@@ -160,7 +167,8 @@ const emailService = {
 			text, //邮件纯文本
 			content, //邮件内容
 			subject, //邮件标题
-			attachments //附件
+			attachments, //附件
+			manyType //分开发送类型
 		} = params;
 
 		const { resendTokens, r2Domain, send, domainList } = await settingService.query(c);
@@ -229,10 +237,52 @@ const emailService = {
 		}
 
 		const domain = emailUtils.getDomain(accountRow.email);
-		const resendToken = resendTokens[domain];
-
-		//如果接收方存在站外邮箱，又没有resend token
-		if (!resendToken && !allInternal) {
+		
+		// 检查哪些收件人在系统中（内部账户）
+		const recipientAccounts = await orm(c).select().from(account)
+			.where(and(
+				inArray(account.email, receiveEmail),
+				eq(account.isDel, isDel.NORMAL)
+			)).all();
+		
+		const internalRecipients = new Set(recipientAccounts.map(acc => acc.email));
+		const externalRecipients = receiveEmail.filter(email => !internalRecipients.has(email));
+		
+		
+		// 获取联邦邮局列表
+		let siteList = await settingService.getSiteList(c);
+		
+		// 确保 siteList 是数组
+		if (!Array.isArray(siteList)) {
+			console.warn('siteList 不是数组，使用空数组:', siteList);
+			siteList = [];
+		}
+		
+		// 分离联邦邮局收件人和普通外部收件人
+		const federationRecipients = [];
+		const normalExternalRecipients = [];
+		
+		externalRecipients.forEach(email => {
+			const recipientDomain = emailUtils.getDomain(email);
+			const federationSite = siteList.find(site => site.domain === recipientDomain);
+			
+			if (federationSite) {
+				// 联邦邮局收件人
+				console.log(`识别为联邦邮局收件人: ${email}, 站点:`, federationSite);
+				federationRecipients.push(email);
+			} else {
+				// 普通外部邮箱
+				console.log(`识别为普通外部收件人: ${email}`);
+				normalExternalRecipients.push(email);
+			}
+		});
+		
+		console.log(`联邦邮局收件人列表:`, federationRecipients);
+		console.log(`普通外部收件人列表:`, normalExternalRecipients);
+		
+		// 只有存在普通外部收件人时才需要 Resend Token
+		let resendToken = resendTokens[domain];
+		if (normalExternalRecipients.length > 0 && !resendToken) {
 			throw new BizError(t('noResendToken'));
 		}
 
@@ -261,27 +311,118 @@ const emailService = {
 		//存在站外时邮箱全部由resend发送
 		if (!allInternal) {
 
-			const resend = new Resend(resendToken);
+			// 重新组织联邦邮局收件人数据结构（按域名分组）
+			const federationRecipientsByDomain = {};
+			federationRecipients.forEach(email => {
+				const recipientDomain = emailUtils.getDomain(email);
+				const federationSite = siteList.find(site => site.domain === recipientDomain);
+				
+				if (federationSite) {
+					if (!federationRecipientsByDomain[recipientDomain]) {
+						federationRecipientsByDomain[recipientDomain] = {
+							key: federationSite.key,
+							api: federationSite.api || recipientDomain, // 使用配置的api域名，如果没有则使用邮箱域名
+							recipients: []
+						};
+					}
+					federationRecipientsByDomain[recipientDomain].recipients.push(email);
+				}
+			});
 
-			const sendForm = {
-				from: `${name} <${accountRow.email}>`,
-				to: [...receiveEmail],
-				subject: subject,
-				text: text,
-				html: html,
-				attachments: [...imageDataList, ...attachments]
-			};
-
-			if (sendType === 'reply') {
-				sendForm.headers = {
-					'in-reply-to': emailRow.messageId,
-					'references': emailRow.messageId
-				};
+			// 发送到联邦邮局的邮件
+			for (const [domain, siteInfo] of Object.entries(federationRecipientsByDomain)) {
+				try {
+					await this.sendToFederation(c, {
+						recipients: siteInfo.recipients,
+						siteKey: siteInfo.key,
+						domain: domain,
+						apiDomain: siteInfo.api,
+						sendEmail: accountRow.email,
+						name: name,
+						subject: subject,
+						text: text,
+						html: html
+					});
+				} catch (e) {
+					console.error(`发送到联邦邮局 ${domain} 失败:`, e);
+					// 继续发送其他收件人的邮件
+				}
 			}
 
-			resendResult = await resend.emails.send(sendForm);
+			// 只有存在普通外部收件人才需要调用 Resend API
+			if (normalExternalRecipients.length > 0) {
+				const resend = new Resend(resendToken);
+				
+				//如果是分开发送
+				if (manyType === 'divide') {
 
+					let sendFormList = [];
+
+					normalExternalRecipients.forEach(email => {
+						const sendForm = {
+							from: `${name} <${accountRow.email}>`,
+							to: [email],
+							subject: subject,
+							text: text,
+							html: html
+						};
+
+						if (sendType === 'reply') {
+							sendForm.headers = {
+								'in-reply-to': emailRow.messageId,
+								'references': emailRow.messageId
+							};
+						}
+
+						sendFormList.push(sendForm);
+					});
+
+					resendResult = await resend.batch.send(sendFormList);
+
+				} else {
+
+					const sendForm = {
+						from: `${name} <${accountRow.email}>`,
+						to: [...normalExternalRecipients],
+						subject: subject,
+						text: text,
+						html: html,
+						attachments: [...imageDataList, ...attachments]
+					};
+
+					if (sendType === 'reply') {
+						sendForm.headers = {
+							'in-reply-to': emailRow.messageId,
+							'references': emailRow.messageId
+						};
+					}
+
+					resendResult = await resend.emails.send(sendForm);
+
+				}
+			} else if (federationRecipients.length > 0) {
+				// 如果只有联邦邮局收件人，无需 Resend
+				resendResult = {
+					data: {
+						id: `federation-${Date.now()}`
+					},
+					error: null
+				};
+					
+				if (manyType === 'divide') {
+					resendResult.data.data = federationRecipients.map(() => ({ id: `federation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` }));
+				}
+			} else {
+				// 如果只有内部收件人，生成虚拟的 messageId
+				resendResult = {
+					data: {
+						id: `internal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+					},
+					error: null
+				};
+			}
 		}
+
 
 		const { data, error } = resendResult;
 
@@ -477,6 +618,125 @@ const emailService = {
 
 	},
 
+	async sendToFederation(c, params) {
+		const { recipients, siteKey, domain, apiDomain, sendEmail, name, subject, text, html } = params;
+
+		if (!siteKey || !domain) {
+			throw new Error('缺少联邦邮局密钥或域名');
+		}
+
+		// 使用API域名，如果没有提供则使用邮箱域名
+		const targetDomain = apiDomain || domain;
+		
+		console.log(`[联邦邮局] 开始发送到 ${targetDomain} (邮箱域名: ${domain}), 收件人:`, recipients);
+		console.log(`[联邦邮局] 发件人: ${sendEmail}, 主题: ${subject}`);
+
+		// 为每个收件人准备邮件数据
+		const emailPayloads = recipients.map(recipient => ({
+			toEmail: recipient,
+			sendEmail: sendEmail,
+			name: name,
+			subject: subject,
+			text: text,
+			content: html,  // 使用 content 字段而不是 html 字段
+			timestamp: Date.now()
+		}));
+
+		// 加密邮件数据（使用对称密钥）
+		console.log(`联邦邮局发送: 加密前数据`, emailPayloads);
+		const encryptedData = await cryptoUtils.encryptWithKey(
+			JSON.stringify(emailPayloads),
+			siteKey
+		);
+		console.log(`联邦邮局发送: 加密完成，数据长度: ${encryptedData.length}`);
+
+		// 获取本站对称密钥（从数据库设置中获取）
+		const setting = await settingService.query(c);
+		const symmetricKey = setting.federationSymmetricKey;
+		if (!symmetricKey) {
+			throw new Error('请先在系统设置中设置本站对称密钥');
+		}
+
+		// 为每个收件人单独发送请求
+		const senderDomain = emailUtils.getDomain(sendEmail);
+		const errors = [];
+		
+
+		for (const recipient of recipients) {
+			try {
+				// 构建请求体
+				const requestBody = {
+					encryptedData: encryptedData,
+					senderDomain: senderDomain,
+					toEmail: recipient
+				};
+
+				console.log(`联邦邮局发送: 发送请求到 ${targetDomain}，收件人: ${recipient}`, requestBody);
+				
+				// 发送到联邦邮局
+				const federationUrl = `https://${targetDomain}/api/federation/receive`;
+				
+				let response;
+				
+				try {
+					// 首先尝试直接发送请求
+					console.log(`尝试直接发送请求到联邦邮局 ${targetDomain} (邮箱域名: ${domain})`);
+					response = await fetch(federationUrl, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify(requestBody)
+					});
+					
+					// 检查响应状态码
+					if (!response.ok) {
+						let errorText = '';
+						try {
+							errorText = await response.text();
+						} catch (textError) {
+							errorText = `无法读取错误响应体: ${textError.message}`;
+						}
+						console.error(`联邦邮局 ${targetDomain} (邮箱域名: ${domain}) 返回错误 ${response.status} (收件人: ${recipient}):`, errorText);
+						errors.push(`收件人 ${recipient}: ${response.status} - ${errorText}`);
+						continue; // 继续下一个收件人
+					}
+					
+					// 检查响应内容
+					let result;
+					try {
+						result = await response.json();
+					} catch (jsonError) {
+						console.error(`联邦邮局 ${targetDomain} (邮箱域名: ${domain}) 响应JSON解析失败:`, jsonError);
+						errors.push(`收件人 ${recipient}: 响应解析失败 - ${jsonError.message}`);
+						continue;
+					}
+					
+					if (result.code !== 200) {
+						console.error(`联邦邮局 ${targetDomain} (邮箱域名: ${domain}) 返回错误代码:`, result);
+						errors.push(`收件人 ${recipient}: ${result.msg || result.message || '未知错误'}`);
+					} else {
+						console.log(`联邦邮件发送成功 (直接) 到 ${recipient}`);
+					}
+					
+				} catch (directError) {
+					// 直接请求失败
+					console.error(`直接请求失败 (收件人: ${recipient}):`, directError);
+					errors.push(`收件人 ${recipient}: 请求失败 - ${directError.message}`);
+				}
+			} catch (e) {
+				console.error(`发送到联邦邮局 ${targetDomain} (邮箱域名: ${domain}) (收件人: ${recipient}) 失败:`, e);
+				errors.push(`收件人 ${recipient}: 处理失败 - ${e.message}`);
+			}
+		}
+		
+		if (errors.length > 0) {
+			throw new Error(`发送到联邦邮局 ${targetDomain} (邮箱域名: ${domain}) 部分失败: ${errors.join('; ')}`);
+		}
+
+		console.log(`成功发送 ${recipients.length} 封邮件到联邦邮局 ${targetDomain} (邮箱域名: ${domain})`);
+	},
+
 	imgReplace(content, cidAttList, r2domain) {
 
 		if (!content) {
@@ -532,8 +792,13 @@ const emailService = {
 		allReceive = Number(allReceive);
 
 		if (isNaN(allReceive)) {
-			let accountRow = await accountService.selectById(c, accountId);
-			allReceive = accountRow.allReceive;
+			if (accountId === 0) {
+				// 全部邮件虚拟账户
+				allReceive = 1;
+			} else {
+				let accountRow = await accountService.selectById(c, accountId);
+				allReceive = accountRow.allReceive;
+			}
 		}
 
 		let list = await orm(c).select({...email}).from(email)

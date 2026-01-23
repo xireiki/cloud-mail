@@ -98,8 +98,20 @@ const en = {
 		"系统设置": "System Settings",
 		"设置查看": "View Settings",
 		"设置修改": "Change Settings",
-		"发件重置": "Reset Send Count"
-	}
+		"发件重置": "Reset Send Count",
+		"联邦邮局": "Federation Site",
+		"联邦邮局查看": "View Federation Site",
+		"联邦邮局添加": "Add Federation Site",
+		"联邦邮局修改": "Edit Federation Site",
+		"联邦邮局删除": "Delete Federation Site"
+	},
+	// Federation site error messages
+	federationDomainRequired: 'Federation domain is required',
+	federationKeyRequired: 'Symmetric key is required',
+	federationKeyInvalid: 'Invalid symmetric key format, must be 64-character hexadecimal string',
+	federationDomainExists: 'Federation domain already exists',
+	federationIdRequired: 'Federation site ID is required',
+	federationNotFound: 'Federation site not found'
 };
 
 export default en;
