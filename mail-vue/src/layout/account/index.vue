@@ -431,7 +431,13 @@ function getAccountList() {
       noLoading.value = true
     }
     if (accounts.length === 0) {
-      accountStore.currentAccount = list[0]
+      // 如果有多个账户，默认选择"全部邮件"
+      if (list.length >= 2) {
+        accountStore.currentAccountId = 0
+        accountStore.currentAccount = allMailAccount
+      } else {
+        accountStore.currentAccount = list[0]
+      }
       loadAllMailCount()
     }
 
