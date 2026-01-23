@@ -46,7 +46,55 @@ const dbInit = {
 				c.env.db.prepare(`ALTER TABLE account ADD COLUMN sort INTEGER NOT NULL DEFAULT 0;`)
 			]);
 		} catch (e) {
-			console.warn(`跳过字段：${e.message}`);
+			console.warn(`跳过账户表sort字段：${e.message}`);
+		}
+		
+		try {
+			await c.env.db.prepare(`
+				CREATE TABLE IF NOT EXISTS federation_site (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					domain TEXT NOT NULL,
+					name TEXT NOT NULL DEFAULT '',
+					symmetric_key TEXT NOT NULL,
+					api_domain TEXT,
+					status INTEGER NOT NULL DEFAULT 1,
+					sort INTEGER NOT NULL DEFAULT 0,
+					created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+					updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+					is_del INTEGER NOT NULL DEFAULT 0
+				)
+			`).run();
+			
+			// 创建唯一索引
+			await c.env.db.prepare(`
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_federation_site_domain 
+				ON federation_site(domain) WHERE is_del = 0
+			`).run();
+			
+			// 创建状态索引
+			await c.env.db.prepare(`
+				CREATE INDEX IF NOT EXISTS idx_federation_site_status 
+				ON federation_site(status)
+			`).run();
+			
+			// 创建删除状态索引
+			await c.env.db.prepare(`
+				CREATE INDEX IF NOT EXISTS idx_federation_site_is_del 
+				ON federation_site(is_del)
+			`).run();
+			
+			console.log('联邦邮局站点表创建成功');
+		} catch (e) {
+			console.error('创建联邦邮局站点表失败:', e);
+			throw e;
+		}
+
+		// 添加联邦邮局对称密钥字段到 setting 表
+		try {
+			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN federation_symmetric_key TEXT;`).run();
+			console.log('成功添加联邦邮局对称密钥字段到 setting 表');
+		} catch (e) {
+			console.warn(`跳过联邦邮局对称密钥字段添加：${e.message}`);
 		}
 	},
 
@@ -434,7 +482,12 @@ const dbInit = {
         (27, '邮件列表', '', 0, 1, 4),
         (28, '邮件查看', 'all-email:query', 27, 2, 0),
         (29, '邮件删除', 'all-email:delete', 27, 2, 0),
-				(30, '身份添加', 'role:add', 13, 2, -1)
+        (30, '身份添加', 'role:add', 13, 2, -1),
+        (31, '联邦邮局', '', 0, 1, 7),
+        (32, '联邦邮局查看', 'federation-site:query', 31, 2, 0),
+        (33, '联邦邮局添加', 'federation-site:add', 31, 2, 1),
+        (34, '联邦邮局修改', 'federation-site:update', 31, 2, 2),
+        (35, '联邦邮局删除', 'federation-site:delete', 31, 2, 3)
       `).run();
 		}
 

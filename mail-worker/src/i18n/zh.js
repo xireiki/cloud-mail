@@ -98,8 +98,20 @@ const zh = {
 		"系统设置": "系统设置",
 		"设置查看": "设置查看",
 		"设置修改": "设置修改",
-		'发件重置': '发件重置'
-	}
+		'发件重置': '发件重置',
+		'联邦邮局': '联邦邮局',
+		'联邦邮局查看': '联邦邮局查看',
+		'联邦邮局添加': '联邦邮局添加',
+		'联邦邮局修改': '联邦邮局修改',
+		'联邦邮局删除': '联邦邮局删除'
+	},
+	// 联邦邮局错误消息
+	federationDomainRequired: '联邦邮局域名不能为空',
+	federationKeyRequired: '对称密钥不能为空',
+	federationKeyInvalid: '对称密钥格式不正确，必须是64个字符的十六进制字符串',
+	federationDomainExists: '联邦邮局域名已存在',
+	federationIdRequired: '联邦邮局站点ID不能为空',
+	federationNotFound: '联邦邮局站点不存在'
 }
 
 export default zh

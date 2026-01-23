@@ -8,6 +8,7 @@ import constant from '../const/constant';
 import BizError from '../error/biz-error';
 import {t} from '../i18n/i18n'
 import verifyRecordService from './verify-record-service';
+import federationSiteService from './federation-site-service';
 
 const settingService = {
 
@@ -186,6 +187,7 @@ const settingService = {
 			send: settingRow.send,
 			r2Domain: settingRow.r2Domain,
 			siteKey: settingRow.siteKey,
+			federationSymmetricKey: settingRow.federationSymmetricKey,
 			background: settingRow.background,
 			loginOpacity: settingRow.loginOpacity,
 			domainList: settingRow.domainList,
@@ -206,6 +208,61 @@ const settingService = {
 			linuxdoSwitch: settingRow.linuxdoSwitch,
 			minEmailPrefix: settingRow.minEmailPrefix
 		};
+	},
+
+	async getSiteList(c) {
+		// 从数据库获取联邦邮局站点列表
+		try {
+			const sites = await federationSiteService.getActiveSites(c);
+			// 确保返回的是数组
+			if (Array.isArray(sites)) {
+				console.log(`从数据库获取到 ${sites.length} 个联邦邮局站点`);
+				return sites;
+			} else {
+				console.warn('getActiveSites 返回的不是数组:', sites);
+				return [];
+			}
+		} catch (e) {
+			console.error('获取联邦邮局站点列表失败，检查数据库表是否存在:', e.message);
+			
+			// 尝试直接查询数据库表
+			try {
+				const result = await c.env.db.prepare(`
+					SELECT domain, symmetric_key as symmetricKey, api_domain as apiDomain 
+					FROM federation_site 
+					WHERE status = 1 AND is_del = 0 
+					ORDER BY sort ASC
+				`).all();
+				
+				if (result && result.results) {
+					const sites = result.results.map(site => ({
+						domain: site.domain,
+						key: site.symmetricKey,
+						api: site.apiDomain || site.domain
+					}));
+					console.log(`直接查询获取到 ${sites.length} 个联邦邮局站点`);
+					return sites;
+				}
+			} catch (dbError) {
+				console.error('直接查询数据库失败:', dbError.message);
+			}
+			
+			// 如果数据库表不存在，回退到环境变量（兼容旧版本）
+			const siteList = c.env.site_list || [];
+			
+			// 如果 site_list 是 JSON 字符串，则解析它
+			if (typeof siteList === 'string') {
+				try {
+					const parsed = JSON.parse(siteList);
+					return Array.isArray(parsed) ? parsed : [];
+				} catch (parseError) {
+					console.error('解析 site_list 失败:', parseError);
+					return [];
+				}
+			}
+			
+			return Array.isArray(siteList) ? siteList : [];
+		}
 	}
 };
 
