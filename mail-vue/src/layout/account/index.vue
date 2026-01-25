@@ -6,7 +6,7 @@
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
-        <el-card class="item" :class="itemBg(0)" v-if="accounts.length >= 2" @click="changeAccount(allMailAccount)">
+        <el-card class="item" :class="itemBg(0)" v-if="accounts.length >= 2 && userStore.settings.showAllEmails" @click="changeAccount(allMailAccount)">
           <div class="account">
             {{ $t('allMail') }}
           </div>
@@ -206,6 +206,16 @@ if (hasPerm('account:query')) {
 
 watch(() => accountStore.changeUserAccountName, () => {
   accounts[0].name = accountStore.changeUserAccountName
+})
+
+// 监听"显示全部邮件"设置的变化
+watch(() => userStore.settings.showAllEmails, (newValue) => {
+  // 如果用户隐藏了"全部邮件"选项，但当前选择了全部邮件虚拟账号
+  if (!newValue && accountStore.currentAccountId === 0 && accounts.length > 0) {
+    // 自动切换到第一个真实账号（主账号）
+    accountStore.currentAccountId = accounts[0].accountId
+    accountStore.currentAccount = accounts[0]
+  }
 })
 
 
@@ -441,8 +451,8 @@ function getAccountList() {
       noLoading.value = true
     }
     if (accounts.length === 0) {
-      // 如果有多个账户，默认选择"全部邮件"
-      if (list.length >= 2) {
+      // 如果有多个账户且用户开启了"显示全部邮件"选项，默认选择"全部邮件"
+      if (list.length >= 2 && userStore.settings.showAllEmails) {
         accountStore.currentAccountId = 0
         // 保持store中的默认全部邮件虚拟账户
       } else {
@@ -453,6 +463,12 @@ function getAccountList() {
     }
 
     accounts.push(...list)
+
+    // 检查：如果用户隐藏了"全部邮件"选项，但当前选择了全部邮件虚拟账号，切换到主账号
+    if (!userStore.settings.showAllEmails && accountStore.currentAccountId === 0 && accounts.length > 0) {
+      accountStore.currentAccountId = accounts[0].accountId
+      accountStore.currentAccount = accounts[0]
+    }
 
     loading.value = false
     followLoading.value = false

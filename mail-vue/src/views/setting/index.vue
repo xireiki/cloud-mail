@@ -30,6 +30,20 @@
         </div>
       </div>
     </div>
+    <div class="container">
+      <div class="title">{{$t('generalSettings')}}</div>
+      <div class="item">
+        <div>{{$t('showAllEmails')}}</div>
+        <div>
+          <el-switch
+              v-model="showAllEmails"
+              :active-value="true"
+              :inactive-value="false"
+              @change="handleShowAllEmailsChange"
+          />
+        </div>
+      </div>
+    </div>
     <div class="del-email" v-perm="'my:delete'">
       <div class="title">{{$t('deleteUser')}}</div>
       <div style="color: var(--regular-text-color);">
@@ -56,6 +70,7 @@ import router from "@/router/index.js";
 import {accountSetName} from "@/request/account.js";
 import {useAccountStore} from "@/store/account.js";
 import {useI18n} from "vue-i18n";
+import { ElMessage } from 'element-plus'
 
 const { t } = useI18n()
 const accountStore = useAccountStore()
@@ -63,6 +78,7 @@ const userStore = useUserStore();
 const setPwdLoading = ref(false)
 const setNameShow = ref(false)
 const accountName = ref(null)
+const showAllEmails = ref(userStore.settings.showAllEmails)
 
 defineOptions({
   name: 'setting'
@@ -71,6 +87,16 @@ defineOptions({
 function showSetName() {
   accountName.value = userStore.user.name
   setNameShow.value = true
+}
+
+function handleShowAllEmailsChange(value) {
+  userStore.settings.showAllEmails = value
+  userStore.saveSettingsToLocalStorage()
+  ElMessage({
+    message: value ? t('showAllEmailsEnabled') : t('showAllEmailsDisabled'),
+    type: 'success',
+    plain: true,
+  })
 }
 
 function setName() {

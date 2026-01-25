@@ -382,6 +382,12 @@ const zh = {
     editMySiteKey: '编辑本站密钥',
     save: '保存',
     notSet: '未设置',
-    keyNotSet: '密钥未设置'
+    keyNotSet: '密钥未设置',
+    // 显示全部邮件设置
+    showAllEmails: '显示全部邮件',
+    showAllEmailsEnabled: '显示全部邮件已启用',
+    showAllEmailsDisabled: '显示全部邮件已禁用',
+    // 通用设置
+    generalSettings: '通用设置'
 }
 export default zh
