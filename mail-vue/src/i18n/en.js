@@ -380,7 +380,13 @@ const en = {
     updateFailed: 'Update failed',
     addSuccess: 'Add successful',
     addFailed: 'Add failed',
-    fetchFailed: 'Failed to fetch data'
+    fetchFailed: 'Failed to fetch data',
+    // Show all emails setting
+    showAllEmails: 'Show all emails',
+    showAllEmailsEnabled: 'Show all emails enabled',
+    showAllEmailsDisabled: 'Show all emails disabled',
+    // General settings
+    generalSettings: 'General Settings'
 }
 
 export default en
