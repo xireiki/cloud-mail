@@ -23,6 +23,8 @@ import { att } from '../entity/att';
 import telegramService from './telegram-service';
 import {sleep} from "../utils/time-utils";
 import cryptoUtils from '../utils/crypto-utils';
+import fileUtils from '../utils/file-utils';
+import constant from '../const/constant';
 
 const emailService = {
 
@@ -341,7 +343,9 @@ const emailService = {
 						name: name,
 						subject: subject,
 						text: text,
-						html: html
+						html: html,
+						attachments: attachments,
+						imageDataList: imageDataList
 					});
 				} catch (e) {
 					console.error(`发送到联邦邮局 ${domain} 失败:`, e);
@@ -619,7 +623,7 @@ const emailService = {
 	},
 
 	async sendToFederation(c, params) {
-		const { recipients, siteKey, domain, apiDomain, sendEmail, name, subject, text, html } = params;
+		const { recipients, siteKey, domain, apiDomain, sendEmail, name, subject, text, html, attachments = [], imageDataList = [] } = params;
 
 		if (!siteKey || !domain) {
 			throw new Error('缺少联邦邮局密钥或域名');
@@ -631,6 +635,55 @@ const emailService = {
 		console.log(`[联邦邮局] 开始发送到 ${targetDomain} (邮箱域名: ${domain}), 收件人:`, recipients);
 		console.log(`[联邦邮局] 发件人: ${sendEmail}, 主题: ${subject}`);
 
+		// 准备附件元数据（不包含二进制内容）
+		const attachmentMetadata = [];
+		
+		// 处理普通附件
+		if (attachments && attachments.length > 0) {
+			for (const att of attachments) {
+				// 为没有 key 的附件生成 key
+				let key = att.key;
+				let size = att.size;
+				
+				if (!key && att.content) {
+					// 如果还没有生成 key，从 content 生成
+					const buff = fileUtils.base64ToUint8Array(att.content);
+					key = constant.ATTACHMENT_PREFIX + await fileUtils.getBuffHash(buff) + fileUtils.getExtFileName(att.filename);
+					// 计算实际大小
+					if (!size) {
+						size = buff.length;
+					}
+				} else if (!key && att.buff) {
+					key = constant.ATTACHMENT_PREFIX + await fileUtils.getBuffHash(att.buff) + fileUtils.getExtFileName(att.filename);
+					if (!size) {
+						size = att.buff.length;
+					}
+				}
+				
+				attachmentMetadata.push({
+					filename: att.filename,
+					mimeType: att.type,
+					size: size,
+					key: key,
+					type: 'attachment'
+				});
+			}
+		}
+		
+		// 处理内嵌图片附件
+		if (imageDataList && imageDataList.length > 0) {
+			for (const img of imageDataList) {
+				attachmentMetadata.push({
+					filename: img.filename,
+					mimeType: img.mimeType,
+					size: img.size,
+					key: img.key,
+					contentId: img.contentId,
+					type: 'embedded'
+				});
+			}
+		}
+
 		// 为每个收件人准备邮件数据
 		const emailPayloads = recipients.map(recipient => ({
 			toEmail: recipient,
@@ -638,7 +691,8 @@ const emailService = {
 			name: name,
 			subject: subject,
 			text: text,
-			content: html,  // 使用 content 字段而不是 html 字段
+			content: html,
+			attachments: attachmentMetadata,
 			timestamp: Date.now()
 		}));
 
@@ -661,6 +715,14 @@ const emailService = {
 		const senderDomain = emailUtils.getDomain(sendEmail);
 		const errors = [];
 		
+		// 准备附件内容（仅用于发送到联邦邮局）
+		const attachmentContents = {};
+		if (attachments && attachments.length > 0) {
+			for (const att of attachments) {
+				// 保存 base64 内容供传输
+				attachmentContents[att.filename] = att.content;
+			}
+		}
 
 		for (const recipient of recipients) {
 			try {
@@ -668,7 +730,8 @@ const emailService = {
 				const requestBody = {
 					encryptedData: encryptedData,
 					senderDomain: senderDomain,
-					toEmail: recipient
+					toEmail: recipient,
+					attachmentContents: attachmentContents
 				};
 
 				console.log(`联邦邮局发送: 发送请求到 ${targetDomain}，收件人: ${recipient}`, requestBody);
