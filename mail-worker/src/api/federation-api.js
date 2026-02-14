@@ -5,10 +5,14 @@ import accountService from '../service/account-service';
 import cryptoUtils from '../utils/crypto-utils';
 import userService from '../service/user-service';
 import settingService from '../service/setting-service';
-import { isDel, emailConst } from '../const/entity-const';
+import { isDel, emailConst, attConst } from '../const/entity-const';
 import orm from '../entity/orm';
 import email from '../entity/email';
 import account from '../entity/account';
+import { att } from '../entity/att';
+import r2Service from '../service/r2-service';
+import fileUtils from '../utils/file-utils';
+import constant from '../const/constant';
 import { eq, and } from 'drizzle-orm';
 
 // 联邦邮件接收 API
@@ -21,7 +25,7 @@ app.post('/federation/receive', async (c) => {
 		
 		console.log('[联邦邮局接收] 收到请求:', JSON.stringify(payload, null, 2));
 		
-		const { encryptedData, senderDomain, toEmail } = payload;
+		const { encryptedData, senderDomain, toEmail, attachmentContents } = payload;
 		
 		if (!encryptedData || !senderDomain || !toEmail) {
 			console.error('[联邦邮局接收] 缺少必要参数');
@@ -69,7 +73,7 @@ app.post('/federation/receive', async (c) => {
 		
 		for (const emailItem of emailDataArray) {
 			// 验证邮件数据结构
-			const { subject, content, text, sendEmail, name, toEmail: itemToEmail } = emailItem;
+			const { subject, content, text, sendEmail, name, toEmail: itemToEmail, attachments: attachmentList = [] } = emailItem;
 			const finalToEmail = itemToEmail || toEmail;
 			
 			console.log(`联邦邮件接收: 处理邮件 - 发件人: ${sendEmail}, 收件人: ${finalToEmail}, 主题: ${subject}`);
@@ -103,6 +107,57 @@ app.post('/federation/receive', async (c) => {
 			try {
 				const receivedEmail = await orm(c).insert(email).values(receiveEmailData).returning().get();
 				console.log(`联邦邮件接收成功: 从 ${sendEmail}(${senderDomain}) 到 ${finalToEmail}, emailId=${receivedEmail.emailId}, accountId=${recipientAccount.accountId}, userId=${recipientAccount.userId}`);
+				
+				// 处理附件
+				if (attachmentList && attachmentList.length > 0) {
+					const attValues = [];
+					for (const attItem of attachmentList) {
+						// 如果有附件内容，保存到 R2
+						let finalKey = attItem.key;
+						if (attachmentContents && attachmentContents[attItem.filename]) {
+							// 从发送方接收到的文件内容（base64 编码）
+							const buff = fileUtils.base64ToUint8Array(attachmentContents[attItem.filename]);
+							// 生成本地的 key
+							finalKey = constant.ATTACHMENT_PREFIX + await fileUtils.getBuffHash(buff) + fileUtils.getExtFileName(attItem.filename);
+							
+							// 上传到本地 R2
+							try {
+								await r2Service.putObj(c, finalKey, buff, {
+									contentType: attItem.mimeType,
+									contentDisposition: `attachment;filename=${attItem.filename}`
+								});
+								console.log(`联邦邮件接收: 已上传附件到 R2, e=${finalKey}`);
+							} catch (r2Error) {
+								console.error(`联邦邮件接收: 上传附件到 R2 失败 - ${r2Error.message}`);
+								// 继续处理，即使 R2 上传失败
+							}
+						}
+						
+						const attData = {
+							userId: recipientAccount.userId,
+							accountId: recipientAccount.accountId,
+							emailId: receivedEmail.emailId,
+							filename: attItem.filename,
+							size: attItem.size,
+							mimeType: attItem.mimeType,
+							key: finalKey,
+							type: attItem.type === 'embedded' ? attConst.type.EMBED : attConst.type.ATT
+						};
+						
+						// 如果是内嵌图片，添加 contentId
+						if (attItem.contentId) {
+							attData.contentId = attItem.contentId;
+						}
+						
+						attValues.push(attData);
+					}
+					
+					if (attValues.length > 0) {
+						await orm(c).insert(att).values(attValues).run();
+						console.log(`联邦邮件接收: 保存 ${attValues.length} 个附件, emailId=${receivedEmail.emailId}`);
+					}
+				}
+				
 			} catch (insertError) {
 				console.error(`联邦邮件接收: 插入邮件失败 - ${insertError.message}`, insertError);
 				throw insertError;
